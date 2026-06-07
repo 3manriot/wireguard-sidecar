@@ -9,13 +9,8 @@ on:
         required: false
         type: boolean
         default: false
-      tag:
-        description: 'Full release tag (e.g. 0.3.1+42)'
-        required: false
-        type: string
-        default: ''
       semver:
-        description: 'Semantic version (e.g. 0.3.1)'
+        description: 'Semantic version to tag the image with (e.g. 0.3.1)'
         required: false
         type: string
         default: ''
@@ -49,27 +44,17 @@ jobs:
       - name: Compute Docker tags
         id: tags
         run: |
-          TAG="${{ inputs.tag }}"
           SEMVER="${{ inputs.semver }}"
           SHA="sha-$(echo "${{ github.sha }}" | cut -c1-7)"
-          if [ -n "$TAG" ]; then
-            DOCKER_VERSION="${TAG//+/.}"
+          if [ -n "$SEMVER" ]; then
             MAJOR_MINOR="$(echo "$SEMVER" | cut -d. -f1,2)"
             MAJOR="$(echo "$SEMVER" | cut -d. -f1)"
             {
               echo "tags<<EOF"
-              echo "${{ env.IMAGE_REF }}:${DOCKER_VERSION}"
               echo "${{ env.IMAGE_REF }}:${SEMVER}"
               echo "${{ env.IMAGE_REF }}:${MAJOR_MINOR}"
               echo "${{ env.IMAGE_REF }}:${MAJOR}"
               echo "${{ env.IMAGE_REF }}:${SHA}"
-              echo "${{ env.IMAGE_REF }}:latest"
-              echo "EOF"
-            } >> $GITHUB_OUTPUT
-          elif [ -n "$SEMVER" ]; then
-            {
-              echo "tags<<EOF"
-              echo "${{ env.IMAGE_REF }}:${SEMVER}"
               echo "${{ env.IMAGE_REF }}:latest"
               echo "EOF"
             } >> $GITHUB_OUTPUT
