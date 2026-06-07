@@ -1,0 +1,8 @@
+---
+workflow: GitHubFlow/v1
+commit-message-incrementing: Enabled
+tag-prefix: ""
+major-version-bump-message: 'BREAKING CHANGE|^(feat|fix|refactor|perf|build)(\(.+\))?!:'
+minor-version-bump-message: '^feat(\(.+\))?:'
+patch-version-bump-message: '^(fix|perf|build|refactor|style|chore)(\(.+\))?:'
+no-bump-message: '^(docs|test|ci)(\(.+\))?:'

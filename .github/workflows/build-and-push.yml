@@ -9,6 +9,16 @@ on:
         required: false
         type: boolean
         default: false
+      tag:
+        description: 'Full release tag (e.g. 0.3.1+42)'
+        required: false
+        type: string
+        default: ''
+      semver:
+        description: 'Semantic version (e.g. 0.3.1)'
+        required: false
+        type: string
+        default: ''
 
 env:
   IMAGE_REGISTRY: ghcr.io
@@ -36,12 +46,46 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
+      - name: Compute Docker tags
+        id: tags
+        run: |
+          TAG="${{ inputs.tag }}"
+          SEMVER="${{ inputs.semver }}"
+          SHA="sha-$(echo "${{ github.sha }}" | cut -c1-7)"
+          if [ -n "$TAG" ]; then
+            DOCKER_VERSION="${TAG//+/.}"
+            MAJOR_MINOR="$(echo "$SEMVER" | cut -d. -f1,2)"
+            MAJOR="$(echo "$SEMVER" | cut -d. -f1)"
+            {
+              echo "tags<<EOF"
+              echo "${{ env.IMAGE_REF }}:${DOCKER_VERSION}"
+              echo "${{ env.IMAGE_REF }}:${SEMVER}"
+              echo "${{ env.IMAGE_REF }}:${MAJOR_MINOR}"
+              echo "${{ env.IMAGE_REF }}:${MAJOR}"
+              echo "${{ env.IMAGE_REF }}:${SHA}"
+              echo "${{ env.IMAGE_REF }}:latest"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
+          elif [ -n "$SEMVER" ]; then
+            {
+              echo "tags<<EOF"
+              echo "${{ env.IMAGE_REF }}:${SEMVER}"
+              echo "${{ env.IMAGE_REF }}:latest"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
+          else
+            {
+              echo "tags<<EOF"
+              echo "${{ env.IMAGE_REF }}:latest"
+              echo "EOF"
+            } >> $GITHUB_OUTPUT
+          fi
+
       - name: Build and push Docker image
         uses: docker/build-push-action@bcafcacb16a39f128d818304e6c9c0c18556b85f  # v7.1.0
         with:
           context: .
           push: ${{ inputs.push_image }}
-          tags: |
-            ${{ env.IMAGE_REF }}:latest
+          tags: ${{ steps.tags.outputs.tags }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
