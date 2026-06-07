@@ -7,3 +7,5 @@ COPY scripts/ /scripts/
 RUN chmod +x /scripts/*.sh
 
 USER wg
+
+ENTRYPOINT ["/scripts/wg-up.sh"]
