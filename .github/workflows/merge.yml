@@ -9,17 +9,69 @@ on:
       - 'Dockerfile'
       - '.github/workflows/**'
       - 'scripts/**'
+      - 'GitVersion.yml'
 
 jobs:
   lint:
     permissions:
       contents: read
     uses: ./.github/workflows/lint.yml
+
+  release:
+    name: GitVersion Release
+    needs: lint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    outputs:
+      tag: ${{ steps.tag.outputs.tag }}
+      semver: ${{ steps.gitversion.outputs.majorMinorPatch }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Install GitVersion
+        uses: gittools/actions/gitversion/setup@v4
+        with:
+          versionSpec: "6.x"
+
+      - name: Determine Version
+        id: gitversion
+        uses: gittools/actions/gitversion/execute@v4
+
+      - name: Create Release
+        id: tag
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SEMVER="${{ steps.gitversion.outputs.majorMinorPatch }}"
+          TAG="${SEMVER}+${{ github.run_number }}"
+
+          if git tag -l "${SEMVER}+*" | grep -q .; then
+            echo "Release for ${SEMVER} already exists, skipping."
+            echo "tag=" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$TAG"
+          git push origin "$TAG"
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --generate-notes
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+
   build:
+    needs: release
+    if: needs.release.outputs.tag != ''
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/build-and-push.yml
-    needs: lint
     with:
       push_image: true
+      tag: ${{ needs.release.outputs.tag }}
+      semver: ${{ needs.release.outputs.semver }}
