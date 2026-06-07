@@ -17,15 +17,15 @@ jobs:
       contents: read
     uses: ./.github/workflows/lint.yml
 
-  release:
-    name: GitVersion Release
+  version:
+    name: Determine Version
     needs: lint
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: read
     outputs:
-      tag: ${{ steps.tag.outputs.tag }}
       semver: ${{ steps.gitversion.outputs.majorMinorPatch }}
+      should_release: ${{ steps.check.outputs.should_release }}
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
@@ -41,37 +41,50 @@ jobs:
         id: gitversion
         uses: gittools/actions/gitversion/execute@bc6623af8fc07d5a8903052dd46da33403eec8e8  # v4.5.0
 
-      - name: Create Release
-        id: tag
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Check if release needed
+        id: check
         run: |
           SEMVER="${{ steps.gitversion.outputs.majorMinorPatch }}"
-          TAG="${SEMVER}+${{ github.run_number }}"
-
-          if git tag -l "${SEMVER}+*" | grep -q .; then
-            echo "Release for ${SEMVER} already exists, skipping."
-            echo "tag=" >> $GITHUB_OUTPUT
-            exit 0
+          if git tag -l "$SEMVER" | grep -q .; then
+            echo "Tag ${SEMVER} already exists, skipping."
+            echo "should_release=false" >> $GITHUB_OUTPUT
+          else
+            echo "should_release=true" >> $GITHUB_OUTPUT
           fi
 
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git tag "$TAG"
-          git push origin "$TAG"
-          gh release create "$TAG" \
-            --title "$TAG" \
-            --generate-notes
-          echo "tag=$TAG" >> $GITHUB_OUTPUT
-
   build:
-    needs: release
-    if: needs.release.outputs.tag != ''
+    needs: version
+    if: needs.version.outputs.should_release == 'true'
     permissions:
       contents: read
       packages: write
     uses: ./.github/workflows/build-and-push.yml
     with:
       push_image: true
-      tag: ${{ needs.release.outputs.tag }}
-      semver: ${{ needs.release.outputs.semver }}
+      semver: ${{ needs.version.outputs.semver }}
+
+  tag:
+    name: Create Git Tag
+    needs: [version, build]
+    if: needs.version.outputs.should_release == 'true'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          fetch-depth: 0
+
+      - name: Tag and release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SEMVER="${{ needs.version.outputs.semver }}"
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git tag "$SEMVER"
+          git push origin "$SEMVER"
+          gh release create "$SEMVER" \
+            --title "$SEMVER" \
+            --generate-notes
