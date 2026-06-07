@@ -4,7 +4,7 @@ name: Merge wireguard-sidecar to master
 on:
   push:
     branches:
-      - master
+      - main
     paths:
       - 'Dockerfile'
       - '.github/workflows/**'
