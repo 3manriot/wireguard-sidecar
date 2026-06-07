@@ -1,0 +1,21 @@
+---
+name: Pull Request
+
+on:
+  pull_request:
+    branches:
+      - master
+    paths:
+      - 'Dockerfile'
+      - '.github/workflows/**'
+
+jobs:
+  lint:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/lint.yml
+  build:
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/build-and-push.yml
