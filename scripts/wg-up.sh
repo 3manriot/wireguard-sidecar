@@ -1,0 +1,87 @@
+#!/bin/sh
+set -eu
+
+WG_CONF=/etc/wireguard/wg0.conf
+GATEWAY="${NATPMP_GATEWAY:-10.2.0.1}"
+INTERVAL="${NATPMP_INTERVAL:-45}"
+
+log() { echo "[wg] $*"; }
+
+field() { grep -E "^\s*${1}\s*=" "$WG_CONF" | head -1 | cut -d= -f2- | sed 's/^ //; s/[[:space:]]*$//'; }
+
+PRIVATE_KEY=$(field PrivateKey)
+VPN_ADDR=$(field Address | cut -d/ -f1)
+PUBLIC_KEY=$(field PublicKey)
+ENDPOINT=$(field Endpoint)
+ENDPOINT_IP=$(echo "$ENDPOINT" | cut -d: -f1)
+
+log "Endpoint:    $ENDPOINT"
+log "VPN address: $VPN_ADDR"
+
+ETH=$(ip route show default | awk '/default/{print $5; exit}')
+GW=$(ip route show default  | awk '/default/{print $3; exit}')
+log "Gateway: $GW via $ETH"
+
+ip link del wg0 2>/dev/null && log "Removed stale wg0" || true
+
+ip link add wg0 type wireguard
+ip addr add "${VPN_ADDR}/32" dev wg0
+
+KEYFILE=$(mktemp)
+printf '%s' "$PRIVATE_KEY" > "$KEYFILE"
+wg set wg0 \
+  private-key "$KEYFILE" \
+  peer "$PUBLIC_KEY" \
+  endpoint "$ENDPOINT" \
+  allowed-ips "0.0.0.0/0" \
+  persistent-keepalive 25
+rm -f "$KEYFILE"
+
+ip link set wg0 up
+log "wg0 up"
+
+ip route add "${ENDPOINT_IP}/32" via "$GW" dev "$ETH" 2>/dev/null || true
+ip route del default 2>/dev/null || true
+ip route add default dev wg0
+
+LAN="${VPN_LAN_NETWORK:-192.168.0.0/16,10.43.0.0/16}"
+for net in $(echo "$LAN" | tr ',' ' '); do
+  ip route add "$net" via "$GW" dev "$ETH" 2>/dev/null || true
+  log "LAN route: $net -> $GW"
+done
+
+LAN_RULES=""
+for net in $(echo "$LAN" | tr ',' ' '); do
+  LAN_RULES="${LAN_RULES}    ip daddr ${net} oif ${ETH} accept\n"
+done
+
+nft -f - << NFTEOF
+table inet wg_killswitch {
+  chain output {
+    type filter hook output priority filter; policy drop;
+    oif lo accept
+    oif wg0 accept
+    ip daddr ${ENDPOINT_IP}/32 oif ${ETH} accept
+$(printf '%b' "$LAN_RULES")
+  }
+  chain input {
+    type filter hook input priority filter; policy accept;
+  }
+}
+NFTEOF
+
+log "Killswitch active"
+
+sleep 1
+if ip route get 1.1.1.1 2>/dev/null | grep -q wg0; then
+  log "Routing verified: external traffic via wg0"
+else
+  log "WARNING: External traffic not routing through wg0"
+fi
+
+log "Renewing NAT-PMP lease via $GATEWAY every ${INTERVAL}s"
+while true; do
+  natpmpc -a 1 0 udp 60 -g "$GATEWAY" > /dev/null 2>&1 || log "WARNING: UDP renewal failed"
+  natpmpc -a 1 0 tcp 60 -g "$GATEWAY" > /dev/null 2>&1 || log "WARNING: TCP renewal failed"
+  sleep "$INTERVAL"
+done
