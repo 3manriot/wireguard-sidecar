@@ -95,12 +95,24 @@ fi
 log "VPN gateway: ${VPN_GW} — NAT-PMP port forwarding delegated to the application"
 log "--- Startup complete, health checks every ${HEALTH_INTERVAL}s ---"
 
+human_bytes() {
+  awk -v b="$1" 'BEGIN {
+    if (b >= 1073741824)      printf "%.2f GiB", b/1073741824
+    else if (b >= 1048576)    printf "%.2f MiB", b/1048576
+    else if (b >= 1024)       printf "%.2f KiB", b/1024
+    else                      printf "%d B", b
+  }'
+}
+
 while true; do
   sleep "$HEALTH_INTERVAL"
   HANDSHAKE=$(wg show wg0 latest-handshakes 2>/dev/null | awk '{print $2}')
   if [ -n "$HANDSHAKE" ] && [ "$HANDSHAKE" -gt 0 ] 2>/dev/null; then
     AGO=$(( $(date +%s) - HANDSHAKE ))
-    log "Healthy — last handshake ${AGO}s ago, $(wg show wg0 transfer 2>/dev/null | awk '{printf "rx %s tx %s", $2, $3}')"
+    TRANSFER=$(wg show wg0 transfer 2>/dev/null)
+    RX=$(echo "$TRANSFER" | awk '{print $2}')
+    TX=$(echo "$TRANSFER" | awk '{print $3}')
+    log "Healthy — last handshake ${AGO}s ago, rx $(human_bytes "$RX") / tx $(human_bytes "$TX") (cumulative)"
   else
     log "WARNING: no WireGuard handshake recorded yet"
   fi
