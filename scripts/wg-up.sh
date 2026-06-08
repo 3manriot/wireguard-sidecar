@@ -2,8 +2,7 @@
 set -eu
 
 WG_CONF=/etc/wireguard/wg0.conf
-GATEWAY="${NATPMP_GATEWAY:-10.2.0.1}"
-INTERVAL="${NATPMP_INTERVAL:-45}"
+VPN_GW="${VPN_GATEWAY:-10.2.0.1}"
 
 log() { echo "[wg] $*"; }
 
@@ -42,7 +41,12 @@ log "wg0 up"
 
 ip route add "${ENDPOINT_IP}/32" via "$GW" dev "$ETH" 2>/dev/null || true
 ip route del default 2>/dev/null || true
-ip route add default dev wg0
+# Add a direct host route to the VPN gateway so it can be used as a next-hop.
+# This makes the default gateway discoverable by NAT-PMP clients (e.g. qBittorrent)
+# via /proc/net/route, allowing them to request port forwarding without wg knowing
+# anything about the application using the tunnel.
+ip route add "${VPN_GW}" dev wg0
+ip route add default via "${VPN_GW}" dev wg0
 
 LAN="${VPN_LAN_NETWORK:-192.168.0.0/16,10.43.0.0/16}"
 for net in $(echo "$LAN" | tr ',' ' '); do
@@ -79,9 +83,5 @@ else
   log "WARNING: External traffic not routing through wg0"
 fi
 
-log "Renewing NAT-PMP lease via $GATEWAY every ${INTERVAL}s"
-while true; do
-  natpmpc -a 1 0 udp 60 -g "$GATEWAY" > /dev/null 2>&1 || log "WARNING: UDP renewal failed"
-  natpmpc -a 1 0 tcp 60 -g "$GATEWAY" > /dev/null 2>&1 || log "WARNING: TCP renewal failed"
-  sleep "$INTERVAL"
-done
+log "VPN gateway: ${VPN_GW} — NAT-PMP port forwarding delegated to the application"
+sleep infinity
