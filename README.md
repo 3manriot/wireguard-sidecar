@@ -22,6 +22,7 @@ The default route is set via the VPN gateway IP (`VPN_GATEWAY`), which makes the
 | --- | --- | --- |
 | `VPN_LAN_NETWORK` | `192.168.0.0/16,10.43.0.0/16` | Comma-separated CIDRs that bypass the VPN and route via eth0 |
 | `VPN_GATEWAY` | `10.2.0.1` | Internal IP of the VPN peer. Used as the default route next-hop so NAT-PMP clients in other containers can discover it. ProtonVPN: `10.2.0.1`, Mullvad: `10.64.0.1` |
+| `HEALTH_INTERVAL` | `60` | Seconds between periodic health log lines reporting the last WireGuard handshake age and cumulative rx/tx bytes |
 
 ## Usage
 
